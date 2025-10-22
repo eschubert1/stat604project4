@@ -1,0 +1,9 @@
+# Ignore pdfs
+*.pdf
+
+# Ignore csvs
+*.csv
+
+# Ignore .RData
+*.RData
+
