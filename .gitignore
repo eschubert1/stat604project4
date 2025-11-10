@@ -7,3 +7,20 @@
 # Ignore .RData
 *.RData
 
+# Ignore .DS_Store
+.DS_Store
+
+# Ignore .Rproj
+.Rproj
+
+# Ignore .Rhistory
+.Rhistory
+
+# Ignore zips
+*.zip
+
+# Ignore .xlsx
+*.xlsx
+
+# Ignore tar.gz
+*tar.gz
