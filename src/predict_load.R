@@ -5,6 +5,7 @@
 # Peak day predictions per zone
 # Should be Date, 24*29 predictions, 29 predictions, 29 predictions
 
+tryCatch({
 suppressMessages(library(lubridate))
 suppressMessages(library(dplyr))
 
@@ -23,7 +24,7 @@ black_fridays = c("2021-11-26", "2022-11-25", "2023-11-24", "2024-11-29", "2025-
 zones = unique(metered_clean$load_area)
 pred_load_data = function(pred_date, zones, thanksgivings, black_fridays) {
   hours = c(0:23)
-  df = expand.grid(hour24_ept, zones)
+  df = expand.grid(hours, zones)
   colnames(df) = c("hour24_ept", "load_area")
   df$date_ept = as.Date(pred_date)
   df = df %>% mutate(mw = 0,
@@ -57,7 +58,7 @@ forecast_temp = forecast_temp %>% filter(date_ept == prediction_date)
 
 # Make predictions
 mw_preds = predict_mw(gm2[[1]], metered_clean, meteo_temp, pred_load_df, forecast_temp, gm2[[2]], gm2[[3]])
-
+}, error = function(e) {
 suppressMessages(load('data/processed/metered_clean.RData'))
 
 default_model = function(df, predict_date) {
@@ -86,3 +87,5 @@ default_model = function(df, predict_date) {
 predictions = suppressMessages(default_model(metered_clean, prediction_date))
 
 cat(prediction_date, predictions)
+}
+)
