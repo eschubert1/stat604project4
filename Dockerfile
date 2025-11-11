@@ -1,4 +1,4 @@
-FROM jupyter/datascience-notebook
+FROM jupyter/datascience-notebook:x86_64-r-4.3.1
 
 
 COPY --chown=1000 Makefile Makefile
