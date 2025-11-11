@@ -1,4 +1,4 @@
-FROM jupyter/datascience-notebook:x86_64-r-4.3.1
+FROM jupyter/r-notebook
 
 
 COPY --chown=1000 Makefile Makefile
@@ -11,3 +11,4 @@ COPY --chown=1000 data/processed/metered_clean.RData data/processed/metered_clea
 COPY --chown=1000 data/processed/open_meteo_historical_temp.RData data/processed/open_meteo_historical_temp.RData
 COPY --chown=1000 data/processed/weather_clean.RData data/processed/weather_clean.RData
 
+CMD ["/bin/bash"]
