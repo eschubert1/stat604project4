@@ -86,6 +86,6 @@ default_model = function(df, predict_date) {
 
 predictions = suppressMessages(default_model(metered_clean, prediction_date))
 
-cat(prediction_date, predictions)
+cat(prediction_date, predictions, sep=",")
 }
 )
