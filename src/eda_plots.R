@@ -21,6 +21,15 @@ med_PE = metered_clean %>% filter(load_area == 'PE') %>% group_by(dayofyear_ept)
 med_PE$dayofyear = med_PE$dayofyear_ept
 pa_data = temp_norms %>% filter(state == 'PA')
 
+# Plot of median megawatts by year
+metered_clean %>% filter(load_area == "AEPOPT") %>% 
+  arrange(date_ept, hour24_ept) %>% 
+  mutate(mw = c(0, diff(mw))) %>% 
+  group_by(date_ept) %>%
+  mutate(med_mw = median(mw)) %>% ungroup() %>% 
+  ggplot(aes(x = dayofyear_ept, y = med_mw, color=factor(year_ept))) +
+  geom_line(alpha=0.4)
+
 # Plot of weather and megawatts
 temp_norms %>% filter(state == 'PA') %>%
   ggplot(aes(x=dayofyear)) +

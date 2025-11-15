@@ -2,6 +2,7 @@
 library(jsonlite)
 library(dplyr)
 library(lubridate)
+library(tidyr)
 
 get_meteo_historical = function(file="data/raw/openmeteo_historical.RData", json_url=NULL) {
   if(is.null(json_url))
@@ -38,7 +39,7 @@ clean_meteo_historical = function(file) {
            hour24_ept = hour(hm(substr(datetime, 12, nchar(datetime))))) %>% 
     select(location_id, date_ept, hour24_ept, temp_F)
   
-  return(forecast_temp)
+  save(forecast_temp, file="data/processed/open_meteo_historical_temp.RData")
 }
 
 get_meteo_forecast = function(json_url=NULL) {

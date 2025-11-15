@@ -91,31 +91,16 @@ find_peak_hours = function(metered_df) {
 
 # Find peak days in a week
 find_peak_daybyweek = function(metered_df) {
-  # Filter data to peak hours only
-  peakloads = metered_df %>% filter(is_peak_hour == 1)
-  nonpeakloads = metered_df %>% filter(is_peak_hour == 0)
   
-  # Define function to get 2nd largest load
-  top2mw = function(x) {which(x == sort(x, decreasing=T)[2])[1]}
+  peaks = metered_df %>% 
+    group_by(load_area, date_ept, year_ept, week_num_ept) %>% 
+    summarize(max_mw = max(mw)) %>% ungroup() %>% 
+    group_by(load_area, year_ept, week_num_ept) %>% 
+    mutate(peak_rank = n()-rank(max_mw)+1) %>% 
+    mutate(is_peak_day_in_week = peak_rank < 3) %>% ungroup() %>%
+    select(load_area, date_ept, is_peak_day_in_week)
   
-  # Determine peak days in week
-  peakdays = peakloads %>% group_by(year_ept, load_area, week_num_ept) %>% 
-    arrange(day_num_ept, .by_group = TRUE) %>%
-    summarize(n = n(), maxload = which.max(mw)) %>% ungroup
-  peakdays2 = peakloads %>% group_by(year_ept, load_area, week_num_ept) %>% 
-    arrange(day_num_ept, .by_group = TRUE) %>% 
-    summarize(n = n(), maxload = top2mw(mw)) %>% ungroup()
-  
-  ii = cumsum(peakdays$n)-peakdays$n + peakdays$maxload
-  
-  peakdays2 = peakdays2 %>% filter(!is.na(maxload))
-  ii2 = cumsum(peakdays2$n)-peakdays2$n + peakdays2$maxload
-  metered_peak = arrange(peakloads, year_ept, load_area, week_num_ept, day_num_ept)
-  metered_peak$is_peak_day_in_week = 0
-  metered_peak$is_peak_day_in_week[ii] = 1
-  metered_peak$is_peak_day_in_week[ii2] = 1
-  nonpeakloads$is_peak_day_in_week = 0
-  metered_peak = rbind(metered_peak, nonpeakloads)
+  metered_df = metered_df %>% left_join(peaks, by=join_by(load_area, date_ept))
 }
 
 # Do all processing
@@ -132,3 +117,5 @@ metered_data = read_metered(dir='data/raw/metered')
 metered_clean = process_data(metered_data)
 metered_clean = metered_clean %>% filter(date_ept >= '2021-01-01')
 save(metered_clean, file='data/processed/metered_clean.RData')
+
+

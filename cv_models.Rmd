@@ -1,0 +1,285 @@
+---
+title: "STATS 604 Project 4 Model Cross Validation"
+author: "Ethan Schubert"
+date: "2025-11-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(lubridate)
+library(nnet)
+library(mgcv)
+library(ggplot2)
+source("src/models.R")
+```
+
+## Load Data
+```{r}
+# Load metered data
+load("data/processed/metered_clean.RData")
+
+# Load temperature data
+load("data/processed/open_meteo_historical_temp.RData")
+meteo_temp = forecast_temp
+```
+
+## MW Forecasting - GAM
+### Model Definition
+To forecast hourly load, I fit GAMs to the metered load data for each zone. Each GAM has the same set of predictors, which consist of datetime predictors and temperature predictors. The datetime predictors consist of the day of the year, the month number, the year, the day of the week, and dummy variables for whether the day is Thanskgiving, Black Friday, or is a weekend. Additionally, the hour of the day (in 24-hour time) and the day of the year are included as smooth terms via thin plate regression splines. The temperature predictors are (historical) forecasts of the average temperature in degrees Fahrenheit for 13 locations - one for each state at least partially contained in the PJM data. Although the models are trained on each zone separately, each model uses temperature information from all 13 locations since many of the zones cover large areas that may cross state boundaries and may or may not be contiguous regions. For any given zone, some of the temperature features are likely to be irrelevant, but since there does not appear to be a direct correspondence between temperature in one location to the power load across an entire zone, all temperature data is included. Additionally, a second set of temperature predictors are included, which are simply transformed versions of the standard temperature data: temp_sq = (temp-45)^2. The reason for including this transformation is that power consumption tends to increase both when the temperature is cold and when it is hot. The function defined below preprocesses and filters the load and temperature data to define the necesssary predictors and then fits the model to the data. The zone the model was trained on as well as some summary information of the data are stored in the output.
+```{r}
+train_mw = function(load_data, temp_data, zone, subset=NULL) {
+  prepped = mw_prepdata(load_data, temp_data, zone)
+  prepped_data = prepped[[1]]
+  summary_vars = prepped[[2]]
+  gm = gam(mw ~ dayofyear_ept
+           + month_num_ept
+           + s(hour24_ept)
+           + s(dayofyear_ept)
+           + year_ept + weekday_ept 
+           + tempF1  + tempF2  + tempF3  + tempF4  + tempF5 
+           + tempF6  + tempF7  + tempF8  + tempF9  + tempF10
+           + tempF11 + tempF12 + tempF0
+           + tempF1_sq + tempF2_sq + tempF3_sq + tempF4_sq + tempF5_sq 
+           + tempF6_sq + tempF7_sq + tempF8_sq + tempF9_sq + tempF10_sq
+           + tempF11_sq + tempF12_sq + tempF0_sq
+           + is_thanksgiving + is_blackfriday + isweekend,
+           family=gaussian(), 
+           data=prepped_data, 
+           weights=NULL, subset=subset)
+  
+  return(list(gm, zone, summary_vars))
+}
+```
+
+### Cross Validation
+```{r, message=F}
+# Cross validation
+mses = matrix(nrow=29, ncol=5)
+zones = unique(metered_clean$load_area)
+mw_models = list()
+for(z in 1:length(zones)) {
+  zone = zones[z]
+  j = 0
+  for(i in unique(metered_clean$year_ept)) {
+    j = j+1
+    print(j)
+
+    load_train = metered_clean %>% filter(year_ept != i)
+    temp_train = meteo_temp %>% filter(year(date_ept) != i)
+    
+    zz = zone
+    if(i == 2025) { # Test on days 273 to 303 (extent of 2025 data)
+      load_test = metered_clean %>% filter(year_ept == i, between(dayofyear_ept, 273, 303))
+      temp_test = meteo_temp %>% filter(year(date_ept) == i, between(yday(date_ept), 273, 303))
+      old_mw = load_train %>% filter(between(dayofyear_ept, 273, 303), load_area==zz) %>% 
+      group_by(hourofyear_ept) %>%
+      summarize(avg_mw = mean(mw)) %>% ungroup()
+    } else {
+      load_test = metered_clean %>% filter(year_ept == i, between(dayofyear_ept, 300, 330))
+      temp_test = meteo_temp %>% filter(year(date_ept) == i, between(yday(date_ept), 300, 330))
+      old_mw = load_train %>% filter(between(dayofyear_ept, 300, 330), load_area==zz) %>% 
+      group_by(hourofyear_ept) %>%
+      summarize(avg_mw = mean(mw)) %>% ungroup()
+    }
+    
+    gm = train_mw(load_train, temp_train, zz)
+    mw_models[[z]] = gm
+    preds = predict_mw(gm[[1]], load_train, temp_train, load_test, temp_test, gm[[2]], gm[[3]])
+
+    pred_join = preds %>% left_join(load_test, by=join_by(load_area, date_ept, hour24_ept, hour24_utc))
+    mses[z,j] = mean((pred_join$predicted_mw - pred_join$mw.y)^2)
+  }
+}
+```
+
+After fitting the models via cross validation, I compute the square root of the average out of sample MSE across the folds for each zone and the results. Most of the zones have an RMSE below 400, with a few zones having an RMSE of 700 or greater. The smaller zones appear to have extremely small RMSE, but this is likely due to the smaller wattage on these areas.
+```{r, message=F}
+zone_means = metered_clean %>% group_by(load_area) %>% 
+  summarize(mw = mean(mw)) %>% select(mw) %>% unlist()
+
+data.frame(load_area = zones, rmse = sqrt(rowMeans(mses, na.rm=T)), mw = zone_means) %>% 
+  ggplot(aes(y = load_area, x = rmse)) +
+  geom_point() +
+  labs(title = 'Hourly MW Forecast RMSE', x = 'RMSE', y = 'Load Area (Zone)')
+```
+
+To examine the RMSE relative to typical load on the zone, I also plot the RMSE over the average megawattage for the zone. The ordering changes substantially, with all but one zone having an RMSE within 5 to 12 percent of the average megawattage. The exception is OVEC, which has RMSE of over 25% of the average megawattage.
+```{r, message=F}
+data.frame(load_area = zones, rmse = sqrt(rowMeans(mses, na.rm=T)), mw = zone_means) %>% 
+  ggplot(aes(y = load_area, x = rmse/mw)) +
+  geom_point()
+  labs(title = 'Hourly MW Forecast Relative RMSE', x = 'RMSE / Mean MW', y = 'Load Area (Zone)')
+```
+
+Although in absolute terms the megawattage for OVEC is small, the trend appears to be quite erratic, even more so than for other areas. This may be due to the small size of the zone, which could be influenced more dramatically by local factors not present in the feature data.
+```{r}
+metered_clean %>% 
+  filter(load_area == "OVEC", between(date_ept, as.Date('2024-11-19'), as.Date('2024-11-29'))) %>% 
+  ggplot(aes(x = hourofyear_ept, y = mw)) +
+  geom_line() +
+  labs(title = 'November 2024 OVEC Hourly MW', x = 'Megawatts', y='Hour of year (EPT)')
+```
+
+## Peakhour forecasting - Neural Net
+### Model definition
+To predict the peak hours for each day, I fit single hidden layer neural networks to the metered load data for each zone. For this task, the data are aggregated to the day level, since the day rather than the hour are the units for prediction. Additionally, since a 'correct' classification only needs to be within 1 hour of the true peak, the classes are restricted to the odd hours of a 24 hour day. This was also done to increase the separation between classes since days where the peak hour was 18 rather than 17 seemed likely to have very similar characteristics. As with the GAM models, datetime features are included for the day, month, and year. Temperature features are also included, but since the data are aggregated, the maximum and minimum temperature in a day for all 13 locations are included as features in the model. Unlike before, the features are standardized to be between 0 and 1. The function defined below preprocesses and filters the load and temperature data to define the necesssary predictors and then fits the model to the data. The zone the model was trained on as well as some summary information of the data are stored in the output.
+
+```{r}
+train_ph = function(load_data, temp_data, zone, mw_preds=NULL) {
+  prepped = ph_prepdata(load_data, temp_data, zone, preds=mw_preds)
+  prepped_data = prepped[[1]]
+  summary_vars = prepped[[2]]
+  nn = nnet(factor(peakhour) ~ dayofyear_ept + weekday_ept + week_num_ept
+            + year_ept + month_num_ept + day_num_ept
+            + is_thanksgiving + is_blackfriday + isweekend
+            + tempF0_min + tempF1_min + tempF2_min + tempF3_min + tempF4_min + 
+            + tempF5_min + tempF6_min + tempF7_min + tempF8_min + tempF9_min + 
+            + tempF10_min + tempF11_min + tempF12_min 
+            + tempF0_max + tempF1_max + tempF2_max + tempF3_max + tempF4_max + 
+            + tempF5_max + tempF6_max + tempF7_max + tempF8_max + tempF9_max + 
+            + tempF10_max + tempF11_max + tempF12_max
+            + tempF1_sq_max + tempF2_sq_max + tempF3_sq_max 
+            + tempF4_sq_max + tempF5_sq_max + tempF6_sq_max
+            + tempF7_sq_max + tempF8_sq_max + tempF9_sq_max
+            + tempF10_sq_max + tempF11_sq_max + tempF12_sq_max + tempF0_sq_max
+            + tempF1_sq_min + tempF2_sq_min + tempF3_sq_min 
+            + tempF4_sq_min + tempF5_sq_min + tempF6_sq_min
+            + tempF7_sq_min + tempF8_sq_min + tempF9_sq_min
+            + tempF10_sq_min + tempF11_sq_min + tempF12_sq_min + tempF0_sq_min,
+            data=prepped_data, weights=NULL, size=10, maxit=1000, decay=1.2)
+  
+  return(list(nn, zone, summary_vars))
+}
+```
+
+### Cross validation
+```{r, message=F}
+misclass = matrix(nrow=29, ncol=5)
+zones = unique(metered_clean$load_area)
+
+set.seed(123028)
+for(z in 1:length(zones)) {
+  zone = zones[z]
+  j = 0
+  for(i in unique(metered_clean$year_ept)) {
+    j = j+1
+    print(j)
+
+    load_train = metered_clean %>% filter(year_ept != i)
+    temp_train = meteo_temp %>% filter(year(date_ept) != i)
+    if(i == 2025) { # Test on days 273 to 303 (extent of 2025 data)
+      load_test = metered_clean %>% filter(year_ept == i, between(dayofyear_ept, 273, 303))
+      temp_test = meteo_temp %>% filter(year(date_ept) == i, between(yday(date_ept), 273, 303))
+    } else {
+      load_test = metered_clean %>% filter(year_ept == i, between(dayofyear_ept, 300, 330))
+      temp_test = meteo_temp %>% filter(year(date_ept) == i, between(yday(date_ept), 300, 330))
+    }
+    
+    zz = zone
+    
+    nn = train_ph(load_train, temp_train, zz)
+    preds = predict_ph(nn[[1]], load_test, temp_test, nn[[2]], nn[[3]])
+
+    true_peaks = load_test %>% filter(load_area == nn[[2]]) %>% 
+      group_by(date_ept) %>% 
+      arrange(hour24_ept, .by_group=TRUE) %>% 
+      summarize(peakhour = which.max(mw)%%24)
+    
+    classdiff = preds$predicted_ph - true_peaks$peakhour
+    misclass[z,j] = mean(abs(classdiff) > 1)
+  }
+}
+```
+
+The average misclassification loss by zone is plotted below. For the most part, the misclassification rate is between 20% to 50%. Although this is higher than the ideal, it seems that many days either have a peak in the late morning or in the early evening, and the characteristics of these days appear to be similar, which seems to make it difficult for the model to predict the peaks. Once again, OVEC is an outlier with a misclassification rate close to 90%. This is likely due to the erratic trend of the load observed earlier.
+```{r}
+data.frame(load_area = zones, misclass = rowMeans(misclass), mw = zone_means) %>% 
+  ggplot(aes(y = load_area, x = misclass)) +
+  geom_point() +
+  labs(title='Average misclassification rate by zone', 
+       x = 'Average misclassification rate', y = 'Load area (Zone)')
+```
+
+## Peakday forecasting - Neural Net
+
+### Model definition
+As with the peak hour model, to predict peak days, I fit single hidden layer neural networks to the metered load data for each zone. The data are again aggregated to the day level for this task. Datetime and temperature data are included as features as before. However, this model also takes the forecasted load from the corresponding GAM model as input with predictors peak_in_day, med_mw, mean_mw, and min_mw corresponding to the maximum, median, mean, and minimum forecasted load for that zone on that day. The function defined below preprocesses and filters the load and temperature data to define the necesssary predictors and then fits the model to the data. The zone the model was trained on as well as some summary information of the data are stored in the output.
+```{r, message=F}
+train_pd = function(load_data, temp_data, zone, mw_preds=NULL) {
+  prepped = pd_prepdata(load_data, temp_data, zone, preds=mw_preds)
+  prepped_data = prepped[[1]]
+  summary_vars = prepped[[2]]
+  nn = nnet(factor(is_peak_day_in_week) ~ dayofyear_ept + year_ept + weekday_ept
+            + week_num_ept + is_thanksgiving + is_blackfriday + isweekend
+            + tempF0_min + tempF1_min + tempF2_min + tempF3_min + tempF4_min + 
+            + tempF5_min + tempF6_min + tempF7_min + tempF8_min + tempF9_min + 
+            + tempF10_min + tempF11_min + tempF12_min 
+            + tempF0_max + tempF1_max + tempF2_max + tempF3_max + tempF4_max + 
+            + tempF5_max + tempF6_max + tempF7_max + tempF8_max + tempF9_max + 
+            + tempF10_max + tempF11_max + tempF12_max
+            + tempF1_sq_max + tempF2_sq_max + tempF3_sq_max 
+            + tempF4_sq_max + tempF5_sq_max + tempF6_sq_max
+            + tempF7_sq_max + tempF8_sq_max + tempF9_sq_max
+            + tempF10_sq_max + tempF11_sq_max + tempF12_sq_max + tempF0_sq_max
+            + tempF1_sq_min + tempF2_sq_min + tempF3_sq_min 
+            + tempF4_sq_min + tempF5_sq_min + tempF6_sq_min
+            + tempF7_sq_min + tempF8_sq_min + tempF9_sq_min
+            + tempF10_sq_min + tempF11_sq_min + tempF12_sq_min + tempF0_sq_min
+            + peak_in_day + med_mw + mean_mw + min_mw,
+            data=prepped_data, weights=peak_in_day, size=10, maxit=1000)
+  
+  return(list(nn, zone, summary_vars))
+}
+```
+
+### Cross Validation
+```{r, message=F}
+misclass = matrix(nrow=29, ncol=5)
+zones = unique(metered_clean$load_area)
+set.seed(253923)
+for(z in 1:length(zones)) {
+  zone = zones[z]
+  j = 0
+  for(i in unique(metered_clean$year_ept)) {
+    j = j+1
+    print(j)
+
+    load_train = metered_clean %>% filter(year_ept != i)
+    temp_train = meteo_temp %>% filter(year(date_ept) != i)
+    if(i == 2025) { # Test on days 273 to 303 (extent of 2025 data)
+      load_test = metered_clean %>% filter(year_ept == i, between(dayofyear_ept, 273, 303))
+      temp_test = meteo_temp %>% filter(year(date_ept) == i, between(yday(date_ept), 273, 303))
+    } else {
+      load_test = metered_clean %>% filter(year_ept == i, between(dayofyear_ept, 300, 330))
+      temp_test = meteo_temp %>% filter(year(date_ept) == i, between(yday(date_ept), 300, 330))
+    }
+    
+    zz = zone
+    gm = mw_models[[z]]
+    mw_fit = predict_mw(gm[[1]], load_train, temp_train, load_train, temp_train, gm[[2]], gm[[3]])
+    nn = train_pd(load_train, temp_train, zz, mw_preds=mw_fit$predicted_mw)
+    
+    
+    mw_preds = predict_mw(gm[[1]], load_train, temp_train, load_test, temp_test, gm[[2]], gm[[3]])
+    preds = predict_pd(nn[[1]], load_test, temp_test, nn[[2]], nn[[3]], mw_preds)
+
+    true_peaks = load_test %>% filter(load_area == nn[[2]]) %>%
+      select(date_ept, weekday_ept, week_num_ept, is_peak_day_in_week) %>% unique()
+    
+    classdiff = (preds$predicted_pd>0.1) - true_peaks$is_peak_day_in_week
+    ii = which(classdiff < 0)
+    classdiff[ii] = 4
+    misclass[z,j] = mean(classdiff)
+  }
+}
+```
+
+Below is the average misclassification loss for each zone. The loss ranges from around 0.3 to 0.8, which again is higher than ideal. However, if every day was predicted as a peak day, the expected loss would be around 0.75, so most models perform at least slightly better than this baseline. Again, OVEC is an exception. 
+```{r}
+data.frame(load_area = zones, misclass = rowMeans(misclass), mw = zone_means) %>% 
+  ggplot(aes(y = load_area, x = misclass)) +
+  geom_point() +
+  labs(title='Average misclassification loss by zone', 
+       x = 'Average misclassification loss', y = 'Load area (Zone)')
+```

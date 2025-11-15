@@ -1,0 +1,145 @@
+---
+title: "STATS 604 Project 4 Model Training"
+author: "Ethan Schubert"
+date: "2025-11-11"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(lubridate)
+library(nnet)
+library(mgcv)
+library(ggplot2)
+# Source helper functions for models
+source("src/models.R")
+```
+
+## Models
+I am interested in three targets for forecasting load on the power grid. The first is the metered load, measured in megawatts, for each of 29 zones for every hour of a given day. The second is to predict which hour of the day will have the highest load in each zone. The third is to forecast which days in a week will have the peak hours with the highest loads. Model performance will be measured by MSE for the first model and misclassification error for the remaining two models. Additionally, for the second model a classification will be considered correct if the predicted peak hour is within 1 hour of the truth. For the final model, the misclassification loss will be 1 if a day is predicted as a 'peakday' when it is not, and a loss of 4 if a day is not predicted to be a peak day when it is.
+
+Since the three targets are measured with different loss functions, three different models will be used. The first is a GAM based on date and temperature variables, and the latter two are single hidden layer neural networks with date and temperature features.
+
+### MW Forecasting - GAM
+To forecast hourly load, I fit GAMs to the metered load data for each zone. Each GAM has the same set of predictors, which consist of datetime predictors and temperature predictors. The datetime predictors consist of the day of the year, the month number, the year, the day of the week, and dummy variables for whether the day is Thanskgiving, Black Friday, or is a weekend. Additionally, the hour of the day (in 24-hour time) and the day of the year are included as smooth terms via thin plate regression splines. The temperature predictors are (historical) forecasts of the average temperature in degrees Fahrenheit for 13 locations - one for each state at least partially contained in the PJM data. Although the models are trained on each zone separately, each model uses temperature information from all 13 locations since many of the zones cover large areas that may cross state boundaries and may or may not be contiguous regions. For any given zone, some of the temperature features are likely to be irrelevant, but since there does not appear to be a direct correspondence between temperature in one location to the power load across an entire zone, all temperature data is included. Additionally, a second set of temperature predictors are included, which are simply transformed versions of the standard temperature data: temp_sq = (temp-45)^2. The reason for including this transformation is that power consumption tends to increase both when the temperature is cold and when it is hot. The function defined below preprocesses and filters the load and temperature data to define the necesssary predictors and then fits the model to the data. The zone the model was trained on as well as some summary information of the data are stored in the output.
+```{r}
+# Train models to forecast load on grid
+train_mw = function(load_data, temp_data, zone, subset=NULL) {
+  prepped = mw_prepdata(load_data, temp_data, zone)
+  prepped_data = prepped[[1]]
+  summary_vars = prepped[[2]]
+  gm = gam(mw ~ dayofyear_ept
+           + month_num_ept
+           + s(hour24_ept)
+           + s(dayofyear_ept)
+           + year_ept + weekday_ept 
+           + tempF1  + tempF2  + tempF3  + tempF4  + tempF5 
+           + tempF6  + tempF7  + tempF8  + tempF9  + tempF10
+           + tempF11 + tempF12 + tempF0
+           + tempF1_sq + tempF2_sq + tempF3_sq + tempF4_sq + tempF5_sq 
+           + tempF6_sq + tempF7_sq + tempF8_sq + tempF9_sq + tempF10_sq
+           + tempF11_sq + tempF12_sq + tempF0_sq
+           + is_thanksgiving + is_blackfriday + isweekend,
+           family=gaussian(), 
+           data=prepped_data, 
+           weights=NULL, subset=subset)
+  
+  return(list(gm, zone, summary_vars))
+}
+```
+
+### Peakhour Forecasting - Neural Net
+To predict the peak hours for each day, I fit single hidden layer neural networks to the metered load data for each zone. For this task, the data are aggregated to the day level, since the day rather than the hour are the units for prediction. Additionally, since a 'correct' classification only needs to be within 1 hour of the true peak, the classes are restricted to the odd hours of a 24 hour day. This was also done to increase the separation between classes since days where the peak hour was 18 rather than 17 seemed likely to have very similar characteristics. As with the GAM models, datetime features are included for the day, month, and year. Temperature features are also included, but since the data are aggregated, the maximum and minimum temperature in a day for all 13 locations are included as features in the model. Unlike before, the features are standardized to be between 0 and 1. The function defined below preprocesses and filters the load and temperature data to define the necesssary predictors and then fits the model to the data. The zone the model was trained on as well as some summary information of the data are stored in the output.
+```{r}
+train_ph = function(load_data, temp_data, zone, mw_preds=NULL) {
+  prepped = ph_prepdata(load_data, temp_data, zone, preds=mw_preds)
+  prepped_data = prepped[[1]]
+  summary_vars = prepped[[2]]
+  nn = nnet(factor(peakhour) ~ dayofyear_ept + weekday_ept + week_num_ept
+            + year_ept + month_num_ept + day_num_ept
+            + is_thanksgiving + is_blackfriday + isweekend
+            + tempF0_min + tempF1_min + tempF2_min + tempF3_min + tempF4_min + 
+            + tempF5_min + tempF6_min + tempF7_min + tempF8_min + tempF9_min + 
+            + tempF10_min + tempF11_min + tempF12_min 
+            + tempF0_max + tempF1_max + tempF2_max + tempF3_max + tempF4_max + 
+            + tempF5_max + tempF6_max + tempF7_max + tempF8_max + tempF9_max + 
+            + tempF10_max + tempF11_max + tempF12_max
+            + tempF1_sq_max + tempF2_sq_max + tempF3_sq_max 
+            + tempF4_sq_max + tempF5_sq_max + tempF6_sq_max
+            + tempF7_sq_max + tempF8_sq_max + tempF9_sq_max
+            + tempF10_sq_max + tempF11_sq_max + tempF12_sq_max + tempF0_sq_max
+            + tempF1_sq_min + tempF2_sq_min + tempF3_sq_min 
+            + tempF4_sq_min + tempF5_sq_min + tempF6_sq_min
+            + tempF7_sq_min + tempF8_sq_min + tempF9_sq_min
+            + tempF10_sq_min + tempF11_sq_min + tempF12_sq_min + tempF0_sq_min,
+            data=prepped_data, weights=NULL, size=10, maxit=1000, decay=1.2)
+  
+  return(list(nn, zone, summary_vars))
+}
+```
+
+### Peakday Forecasting - Neural Net
+As with the peak hour model, to predict peak days, I fit single hidden layer neural networks to the metered load data for each zone. The data are again aggregated to the day level for this task. Datetime and temperature data are included as features as before. However, this model also takes the forecasted load from the corresponding GAM model as input with predictors peak_in_day, med_mw, mean_mw, and min_mw corresponding to the maximum, median, mean, and minimum forecasted load for that zone on that day. The function defined below preprocesses and filters the load and temperature data to define the necesssary predictors and then fits the model to the data. The zone the model was trained on as well as some summary information of the data are stored in the output.
+```{r}
+train_pd = function(load_data, temp_data, zone, mw_preds=NULL) {
+  prepped = pd_prepdata(load_data, temp_data, zone, preds=mw_preds)
+  prepped_data = prepped[[1]]
+  summary_vars = prepped[[2]]
+  nn = nnet(factor(is_peak_day_in_week) ~ dayofyear_ept + year_ept + weekday_ept
+            + week_num_ept + is_thanksgiving + is_blackfriday + isweekend
+            + tempF0_min + tempF1_min + tempF2_min + tempF3_min + tempF4_min + 
+            + tempF5_min + tempF6_min + tempF7_min + tempF8_min + tempF9_min + 
+            + tempF10_min + tempF11_min + tempF12_min 
+            + tempF0_max + tempF1_max + tempF2_max + tempF3_max + tempF4_max + 
+            + tempF5_max + tempF6_max + tempF7_max + tempF8_max + tempF9_max + 
+            + tempF10_max + tempF11_max + tempF12_max
+            + tempF1_sq_max + tempF2_sq_max + tempF3_sq_max 
+            + tempF4_sq_max + tempF5_sq_max + tempF6_sq_max
+            + tempF7_sq_max + tempF8_sq_max + tempF9_sq_max
+            + tempF10_sq_max + tempF11_sq_max + tempF12_sq_max + tempF0_sq_max
+            + tempF1_sq_min + tempF2_sq_min + tempF3_sq_min 
+            + tempF4_sq_min + tempF5_sq_min + tempF6_sq_min
+            + tempF7_sq_min + tempF8_sq_min + tempF9_sq_min
+            + tempF10_sq_min + tempF11_sq_min + tempF12_sq_min + tempF0_sq_min
+            + peak_in_day + med_mw + mean_mw + min_mw,
+            data=prepped_data, weights=peak_in_day, size=10, maxit=1000)
+  
+  return(list(nn, zone, summary_vars))
+}
+```
+
+## Train and Test sets
+The training data consists of observations from January 1st, 2021 to September 29th, 2025. Test data consists of observations from September 30th, 2025 to November 3rd, 2025.
+```{r}
+# Load metered data
+load("data/processed/metered_clean.RData")
+
+# Load temperature data
+load("data/processed/open_meteo_historical_temp.RData")
+meteo_temp = forecast_temp
+
+# Create train and test sets for metered (load) data and temperature data
+load_train = metered_clean %>% filter(between(date_ept, as.Date('2021-01-01'), as.Date('2025-09-29')))
+temp_train = meteo_temp %>% filter(between(date_ept, as.Date('2021-01-01'), as.Date('2025-09-29')))
+```
+
+## Training
+The models are trained on each zone and saved in the models folder.
+```{r, message=FALSE}
+set.seed(39238)
+zones = unique(metered_clean$load_area)
+for(i in 1:length(zones)) {
+  zone = zones[i]
+  path_mw = paste("models/mw_",zone,".RData", sep="")
+  path_ph = paste("models/ph_",zone,".RData", sep="")
+  path_pd = paste("models/pd_",zone,".RData", sep="")
+  gm = train_mw(load_train, temp_train, zone=zones[i])
+  save(gm, file=path_mw)
+  nn = train_ph(load_train, temp_train, zone=zones[i])
+  save(nn, file=path_ph)
+  mw_fit = predict_mw(gm[[1]], load_train, temp_train, load_train, temp_train, gm[[2]], gm[[3]])
+  nn = train_pd(load_train, temp_train, zone=zones[i], mw_fit$predicted_mw)
+  save(nn, file=path_pd)
+}
+```

@@ -1,0 +1,117 @@
+---
+title: "Power Forecasting Model Testing"
+author: "Ethan Schubert"
+date: "2025-11-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(lubridate)
+library(nnet)
+library(mgcv)
+library(ggplot2)
+source("src/models.R")
+```
+
+## Load data
+To test the performance of the final version of the models, we split out the test set
+from the data.
+```{r}
+# Load metered data
+load("data/processed/metered_clean.RData")
+
+# Load temperature data
+load("data/processed/open_meteo_historical_temp.RData")
+meteo_temp = forecast_temp
+
+load_train = metered_clean %>% filter(between(date_ept, as.Date('2021-01-01'), as.Date('2025-09-29')))
+temp_train = meteo_temp %>% filter(between(date_ept, as.Date('2021-01-01'), as.Date('2025-09-29')))
+load_test = metered_clean %>% filter(between(date_ept, as.Date('2025-09-30'), as.Date('2025-11-03')))
+temp_test = meteo_temp %>% filter(between(date_ept, as.Date('2025-09-30'), as.Date('2025-11-03')))
+```
+
+## MW Forecasting - GAM
+```{r}
+zones = unique(metered_clean$load_area)
+mses = vector(length=length(zones))
+for(i in 1:length(zones)) {
+  zone = zones[i]
+  path_mw = paste("models/mw_",zone,".RData", sep="")
+  load(file=path_mw)
+  preds = predict_mw(gm[[1]], load_train, temp_train, load_test, temp_test, zone=gm[[2]], gm[[3]])
+  pred_join = preds %>% left_join(load_test, by=join_by(load_area, date_ept, hour24_ept, hour24_utc))
+  mses[i] = mean((pred_join$predicted_mw - pred_join$mw.y)^2)
+}
+```
+
+```{r}
+zone_means = metered_clean %>% group_by(load_area) %>% 
+  summarize(mw = mean(mw)) %>% select(mw) %>% unlist()
+
+data.frame(load_area = zones, rmse = sqrt(mses), mw = zone_means) %>% 
+  ggplot(aes(y = load_area, x = rmse)) +
+  geom_point()
+
+data.frame(load_area = zones, rmse = sqrt(mses), mw = zone_means) %>% 
+  ggplot(aes(y = load_area, x = rmse/mw)) +
+  geom_point()
+```
+
+## Peakhour Forecasting - Neural Net
+### Testing
+```{r}
+zones = unique(metered_clean$load_area)
+misclass = vector(length=length(zones))
+for(i in 1:length(zones)) {
+  zone = zones[i]
+  path_ph = paste("models/ph_",zone,".RData",sep="")
+  load(file=path_ph)
+  preds = predict_ph(nn[[1]], load_test, temp_test, zone=nn[[2]], nn[[3]])
+  
+  true_peaks = load_test %>% filter(load_area == nn[[2]]) %>% 
+      group_by(date_ept) %>% 
+      arrange(hour24_ept, .by_group=TRUE) %>% 
+      summarize(peakhour = which.max(mw)%%24)
+  classdiff = preds$predicted_ph - true_peaks$peakhour
+  misclass[i] = mean(abs(classdiff) > 1)
+}
+```
+
+
+```{r}
+data.frame(load_area = zones, misclass = misclass) %>% 
+  ggplot(aes(y = load_area, x = misclass)) +
+  geom_point()
+```
+
+
+## Peakday Forecasting - Neural Net
+### Testing
+```{r}
+zones = unique(metered_clean$load_area)
+misclass = vector(length=length(zones))
+for(i in 1:length(zones)) {
+  zone = zones[i]
+  path_mw = paste("models/mw_",zone,".RData", sep="")
+  path_pd = paste("models/pd_",zone,".RData",sep="")
+  load(file=path_mw)
+  load(file=path_pd)
+  mw_preds = predict_mw(gm[[1]], load_train, temp_train, load_test, temp_test, gm[[2]], gm[[3]])
+  nn_preds = predict_pd(nn[[1]], load_test, temp_test, nn[[2]], nn[[3]], mw_preds)
+  true_peaks = load_test %>% filter(load_area == gm[[2]]) %>%
+    select(date_ept, is_peak_day_in_week) %>% unique()
+  
+  nn_classdiff = (nn_preds$predicted_pd>0.2) - true_peaks$is_peak_day_in_week
+  ii = which(nn_classdiff < 0)
+  nn_classdiff[ii] = 4
+  misclass[i] = mean(nn_classdiff)
+}
+```
+
+
+```{r}
+data.frame(load_area = zones, misclass = misclass) %>% 
+  ggplot(aes(y = load_area, x = misclass)) +
+  geom_point()
+```
