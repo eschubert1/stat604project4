@@ -1,10 +1,7 @@
-library(rrpack)
 library(tidyr)
-library(tidymodels)
 library(ggplot2)
 library(mgcv)
 library(nnet)
-library(tseries)
 
 make_lags = function(df) {
   df = df %>% group_by(dayofyear_ept, year_ept) %>% 

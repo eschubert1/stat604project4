@@ -77,7 +77,7 @@ for(i in 1:length(zones)) {
   ph_preds = c(ph_preds, php$predicted_ph)
   load(file=pd_path)
   pdp = predict_pd(nn[[1]], pred_load_df, forecast_temp, nn[[2]], nn[[3]], mwp)
-  pd_preds = c(pd_preds, pdp$predicted_pd)
+  pd_preds = c(pd_preds, as.numeric(pdp$predicted_pd>0.1))
 })
 
 predictions = c(mw_preds, ph_preds, pd_preds)
