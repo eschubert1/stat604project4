@@ -80,7 +80,7 @@ for(i in 1:length(zones)) {
   pd_preds = c(pd_preds, as.numeric(pdp$predicted_pd>0.1))
 })
 
-predictions = c(mw_preds, ph_preds, pd_preds)
+predictions = c(round(mw_preds), ph_preds, pd_preds)
 cat(prediction_date, predictions, sep=",")
 }, error = function(e) {
 suppressMessages(load('data/processed/metered_clean.RData'))
@@ -104,7 +104,7 @@ default_model = function(df, predict_date) {
     arrange(load_area)
   
   
-  predictions = c(predict_loads$mw, predict_peaks$peak_hour, predict_peaks$peak_day)
+  predictions = c(round(predict_loads$mw), predict_peaks$peak_hour, predict_peaks$peak_day)
   predictions
 }
 
