@@ -1,6 +1,5 @@
 # Required
-all:
-	echo "Not implemented yet"
+all: processdata validate test
 
 # Required
 predictions:
@@ -13,6 +12,12 @@ getraw:
 
 train:
 	Rscript -e "rmarkdown::render('train_models.Rmd')"
+
+validate:
+	Rscript -e "rmarkdown::render('cv_models.Rmd')"
+
+test: train
+	Rscript -e "rmarkdown::render('test_models.Rmd')"
 
 # Required
 clean:
