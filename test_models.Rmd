@@ -51,11 +51,13 @@ zone_means = metered_clean %>% group_by(load_area) %>%
 
 data.frame(load_area = zones, rmse = sqrt(mses), mw = zone_means) %>% 
   ggplot(aes(y = load_area, x = rmse)) +
-  geom_point()
+  geom_point() +
+  labs(title = 'Hourly MW Forecast RMSE', x = 'RMSE', y = 'Load Area (Zone)')
 
 data.frame(load_area = zones, rmse = sqrt(mses), mw = zone_means) %>% 
   ggplot(aes(y = load_area, x = rmse/mw)) +
-  geom_point()
+  geom_point() +
+  labs(title = 'Hourly MW Forecast RMSE', x = 'RMSE / Mean MW', y = 'Load Area (Zone)')
 ```
 
 ## Peakhour Forecasting - Neural Net
@@ -78,11 +80,12 @@ for(i in 1:length(zones)) {
 }
 ```
 
-
 ```{r}
 data.frame(load_area = zones, misclass = misclass) %>% 
   ggplot(aes(y = load_area, x = misclass)) +
-  geom_point()
+  geom_point() +
+  labs(title='Average misclassification rate by zone', 
+       x = 'Average misclassification rate', y = 'Load area (Zone)')
 ```
 
 
@@ -113,5 +116,7 @@ for(i in 1:length(zones)) {
 ```{r}
 data.frame(load_area = zones, misclass = misclass) %>% 
   ggplot(aes(y = load_area, x = misclass)) +
-  geom_point()
+  geom_point() +
+  labs(title='Average misclassification loss by zone', 
+       x = 'Average misclassification loss', y = 'Load area (Zone)')
 ```
