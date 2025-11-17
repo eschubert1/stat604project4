@@ -1,17 +1,13 @@
 # File for computing predictions
 
-# Initially, simply set all predictions to 0. Should be 
-# Date, Load predictions per hour per zone, peak hour predictions per zone,
-# Peak day predictions per zone
-# Should be Date, 24*29 predictions, 29 predictions, 29 predictions
 suppressMessages(library(lubridate))
 suppressMessages(library(dplyr))
 suppressMessages(library(tidyr))
 
+# If pre-trained models throw error, switch to averages of historical data
 tryCatch({
   suppressMessages(library(mgcv))
   suppressMessages(library(nnet))
-# Load data sets
 
 # Load metered data
 load("data/processed/metered_clean.RData")
