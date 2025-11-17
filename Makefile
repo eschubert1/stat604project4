@@ -1,5 +1,5 @@
 # Required
-all: processdata validate test
+all: processdata eda validate test notebooks
 
 # Required
 predictions:
@@ -19,13 +19,20 @@ validate:
 test: train
 	Rscript -e "rmarkdown::render('test_models.Rmd')"
 
+notebooks:
+	pip install jupytext
+	jupytext --to notebook train_models.Rmd
+	jupytext --to notebook test_models.Rmd
+	jupytext --to notebook cv_models.Rmd
+	jupytext --to notebook eda.Rmd
+
 # Required
 clean:
 	rm -r data/raw/*
 	rm -r data/processed/*
 
 eda:
-	echo "Not implemented yet"
+	Rscript -e "rmarkdown::render('eda.Rmd')"
 
 # Required
 rawdata: getraw
