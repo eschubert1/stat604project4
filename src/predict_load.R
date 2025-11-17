@@ -73,7 +73,7 @@ for(i in 1:length(zones)) {
   ph_preds = c(ph_preds, php$predicted_ph)
   load(file=pd_path)
   pdp = predict_pd(nn[[1]], pred_load_df, forecast_temp, nn[[2]], nn[[3]], mwp)
-  pd_preds = c(pd_preds, as.numeric(pdp$predicted_pd>0.1))
+  pd_preds = c(pd_preds, as.numeric(pdp$predicted_pd>0.2))
 })
 
 predictions = c(round(mw_preds), ph_preds, pd_preds)
@@ -96,7 +96,7 @@ default_model = function(df, predict_date) {
   
   predict_peaks = predict_loads %>% select(load_area, peak_hour, peak_day) %>% 
     group_by(load_area) %>% summarize(peak_hour = (which.max(peak_hour)-1),
-                                      peak_day = (mean(peak_day)>0.1)) %>% 
+                                      peak_day = (mean(peak_day)>0.2)) %>% 
     arrange(load_area)
   
   

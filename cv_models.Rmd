@@ -64,7 +64,7 @@ for(z in 1:length(zones)) {
   j = 0
   for(i in unique(metered_clean$year_ept)) {
     j = j+1
-    print(j)
+    print(paste("Zone", z, "CV fold",j))
 
     load_train = metered_clean %>% filter(year_ept != i)
     temp_train = meteo_temp %>% filter(year(date_ept) != i)
@@ -268,7 +268,7 @@ for(z in 1:length(zones)) {
     true_peaks = load_test %>% filter(load_area == nn[[2]]) %>%
       select(date_ept, weekday_ept, week_num_ept, is_peak_day_in_week) %>% unique()
     
-    classdiff = (preds$predicted_pd>0.1) - true_peaks$is_peak_day_in_week
+    classdiff = (preds$predicted_pd>0.2) - true_peaks$is_peak_day_in_week
     ii = which(classdiff < 0)
     classdiff[ii] = 4
     misclass[z,j] = mean(classdiff)
@@ -276,7 +276,7 @@ for(z in 1:length(zones)) {
 }
 ```
 
-Below is the average misclassification loss for each zone. The loss ranges from around 0.3 to 0.8, which again is higher than ideal. However, if every day was predicted as a peak day, the expected loss would be around 0.75, so most models perform at least slightly better than this baseline. Again, OVEC is an exception. 
+Below is the average misclassification loss for each zone. The loss ranges from around 0.4 to 0.8, which again is higher than ideal. However, if every day was predicted as a peak day, the expected loss would be around 0.75, so most models perform at least slightly better than this baseline. Again, OVEC is an exception. 
 ```{r}
 data.frame(load_area = zones, misclass = rowMeans(misclass), mw = zone_means) %>% 
   ggplot(aes(y = load_area, x = misclass)) +
