@@ -19,4 +19,10 @@ make rawdata # Redownloads raw data
 make processdata # Processes raw data
 make predictions # Predicts load, peak hours and peak days for tomorrow
 make all # Processes raw data, runs eda, model training, validation, and testing
+```
+
+A docker image containing the raw and processed data and trained models can be 
+accessed by running
+```
+docker run -it eschubert1/stats604proj4
 ``` 
