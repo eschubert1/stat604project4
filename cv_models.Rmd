@@ -53,6 +53,7 @@ train_mw = function(load_data, temp_data, zone, subset=NULL) {
 ```
 
 ### Cross Validation
+Cross validation is done by holding out a year of the data at a time as a test set and training on the remaining data.
 ```{r, message=F}
 # Cross validation
 mses = matrix(nrow=29, ncol=5)
@@ -147,7 +148,7 @@ train_ph = function(load_data, temp_data, zone, mw_preds=NULL) {
             + tempF4_sq_min + tempF5_sq_min + tempF6_sq_min
             + tempF7_sq_min + tempF8_sq_min + tempF9_sq_min
             + tempF10_sq_min + tempF11_sq_min + tempF12_sq_min + tempF0_sq_min,
-            data=prepped_data, weights=NULL, size=10, maxit=1000, decay=1.2)
+            data=prepped_data, weights=NULL, size=10, maxit=1000, decay=1.2, trace=F)
   
   return(list(nn, zone, summary_vars))
 }
@@ -164,7 +165,7 @@ for(z in 1:length(zones)) {
   j = 0
   for(i in unique(metered_clean$year_ept)) {
     j = j+1
-    print(j)
+    print(paste("Zone", z, "CV fold",j))
 
     load_train = metered_clean %>% filter(year_ept != i)
     temp_train = meteo_temp %>% filter(year(date_ept) != i)
@@ -227,7 +228,7 @@ train_pd = function(load_data, temp_data, zone, mw_preds=NULL) {
             + tempF7_sq_min + tempF8_sq_min + tempF9_sq_min
             + tempF10_sq_min + tempF11_sq_min + tempF12_sq_min + tempF0_sq_min
             + peak_in_day + med_mw + mean_mw + min_mw,
-            data=prepped_data, weights=peak_in_day, size=10, maxit=1000)
+            data=prepped_data, weights=peak_in_day, size=10, maxit=1000, trace=F)
   
   return(list(nn, zone, summary_vars))
 }
@@ -243,7 +244,7 @@ for(z in 1:length(zones)) {
   j = 0
   for(i in unique(metered_clean$year_ept)) {
     j = j+1
-    print(j)
+    print(paste("Zone", z, "CV fold",j))
 
     load_train = metered_clean %>% filter(year_ept != i)
     temp_train = meteo_temp %>% filter(year(date_ept) != i)
