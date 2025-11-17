@@ -4,6 +4,12 @@
 # Ignore csvs
 *.csv
 
+# Ignore html
+*.html
+
+# Ignore ipynb
+*.ipynb
+
 # Ignore .RData
 *.RData
 
