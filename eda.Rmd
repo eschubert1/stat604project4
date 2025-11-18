@@ -3,6 +3,8 @@ title: "Exploratory Data Analysis"
 author: "Ethan Schubert"
 date: "2025-11-16"
 output: html_document
+editor_options:
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -64,7 +66,7 @@ metered_clean %>%
 Due to the seasonality in the load data, I would expect the trend to follow the temperature in some way. Plotting the daily megawatts alongside average temperature there appears to be a (noisy) nonlinear relationship between the two, with low load for temperatures between 40 and 60 and high power consumption elsewhere, especially in high temperatures.
 ```{r}
 metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>% 
-  left_join(filter(meteo_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
+  left_join(filter(forecast_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
   group_by(dayofyear_ept, date_ept) %>% 
   summarize(mw = mean(mw), temp_F = mean(temp_F)) %>% 
   ggplot(aes(x = dayofyear_ept, y = temp_F)) +
@@ -77,7 +79,7 @@ metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>%
 
 ```{r}
 metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>% 
-  left_join(filter(meteo_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
+  left_join(filter(forecast_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
   group_by(dayofyear_ept, date_ept) %>% 
   summarize(mw = mean(mw), temp_F = mean(temp_F)) %>% 
   ggplot(aes(y = mw, x = temp_F)) +
@@ -108,7 +110,7 @@ metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>%
 
 ```{r}
 metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>% 
-  left_join(filter(meteo_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
+  left_join(filter(forecast_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
   filter(is_peak_day_in_week == 1) %>% 
   group_by(dayofyear_ept, weekday_ept, date_ept) %>% 
   summarize(mw = mean(mw), temp_F = mean(temp_F)) %>% 
