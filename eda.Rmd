@@ -112,11 +112,13 @@ metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>%
 metered_clean %>% filter(load_area == "PE", year_ept == 2024) %>% 
   left_join(filter(forecast_temp, location_id==9), by = join_by(date_ept, hour24_ept)) %>% 
   filter(is_peak_day_in_week == 1) %>% 
+  mutate(weekday_ept = factor(weekday_ept, 
+    levels=c('Sunday', 'Saturday', 'Friday', 'Thursday', 'Wednesday', 'Tuesday', 'Monday'))) %>% 
   group_by(dayofyear_ept, weekday_ept, date_ept) %>% 
   summarize(mw = mean(mw), temp_F = mean(temp_F)) %>% 
   ggplot(aes(y = weekday_ept, x = temp_F)) +
   geom_point() +
   labs(x="Mean Daily Temperature", 
-       title="Mean Daily Temperature to Power Consumption in PE", y="Mean MW")
+       title="Peak Days by Temperature", y="Day of week")
 ```
 
